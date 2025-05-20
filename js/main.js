@@ -1,4 +1,4 @@
-import { setupPose, pose } from './pose.js';
+import { setupPose, pose } from './pose.js'; 
 import { setupCamera, switchCamera } from './camera.js';
 import { processJump } from './jumpLogic.js';
 import { updateJumpStats } from './ui.js';
