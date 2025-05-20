@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>JumpTek AI Tracker Widget</title>
+  <style>
+    html, body {
+      margin: 0;
+      padding: 0;
+      overflow: hidden;
+      background: #000;
+      color: #fff;
+      font-family: sans-serif;
+    }
+    #canvas-container {
+      position: relative;
+      width: 100vw;
+      height: 100vh;
+    }
+    canvas {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+    }
+    .jump-stats {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      background: rgba(0,0,0,0.5);
+      padding: 10px;
+      border-radius: 5px;
+      font-size: 14px;
+    }
+    #switch-camera-button {
+      position: absolute;
+      bottom: 10px;
+      left: 10px;
+      z-index: 10;
+      padding: 8px 12px;
+      background-color: rgba(255,255,255,0.1);
+      color: white;
+      border: 1px solid white;
+      border-radius: 5px;
+      cursor: pointer;
+    }
+  </style>
+</head>
+<body>
+  <div id="canvas-container">
+    <canvas class="output"></canvas>
+    <canvas class="landmark"></canvas>
+    <div class="jump-stats" id="jumpStats">
+      <p>Jump Height: <span id="jumpHeight">0</span> m</p>
+      <p>Airtime: <span id="airtime">0</span> s</p>
+      <p>Highest Jump: <span id="highestJump">0</span> m</p>
+      <p>Lowest Jump: <span id="lowestJump">0</span> m</p>
+      <p>Average Jump: <span id="averageJump">0</span> m</p>
+      <p>Jump Count: <span id="jumpCount">0</span></p>
