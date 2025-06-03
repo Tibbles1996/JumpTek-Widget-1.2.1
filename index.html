@@ -1,61 +1,1393 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>JumpTek AI Tracker Widget</title>
+  <meta charset="UTF-8">
+  <title>JumpTek MediaPipe AI Tracker Widget</title>
   <style>
-    html, body {
-      margin: 0;
-      padding: 0;
-      overflow: hidden;
-      background: #000;
-      color: #fff;
-      font-family: sans-serif;
+    html, body { height: 100%; margin: 0; padding: 0; overflow: hidden; }
+    body { width: 100vw; height: 100vh; background: #222; color: #fff; font-family: Arial, sans-serif; box-sizing: border-box; }
+    #container { position: relative; width: 100vw; height: 100vh; overflow: hidden; background: #000; }
+    #canvas, #video {
+      position: absolute; top: 0; left: 0;
+      width: 100vw; height: 100vh;
+      display: block; z-index: 1; background: #000; border: none;
+      pointer-events: none;
     }
-    #canvas-container {
-      position: relative;
-      width: 100vw;
-      height: 100vh;
+    #canvas { z-index: 2; pointer-events: auto; }
+    #video { z-index: 1; opacity: 0; }
+    #buttonRow { position: absolute; top: 20px; left: 50%; transform: translateX(-50%); display: flex; gap: 20px; z-index: 20; }
+    #switchCameraBtn, #calibrateBtn, #settingsBtn, #zoomInBtn, #zoomOutBtn {
+      position: static; margin: 0; padding: 10px 18px; color: #fff;
+      border: none; border-radius: 16px; font-size: 1.3rem; cursor: pointer;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.2); transition: background 0.2s;
+      display: flex; align-items: center; justify-content: center; font-weight: bold;
+      background: #27ae60;
     }
-    canvas {
-      position: absolute;
-      top: 0;
-      left: 0;
-      width: 100%;
-      height: 100%;
-    }
-    .jump-stats {
-      position: absolute;
-      top: 10px;
-      left: 10px;
-      background: rgba(0,0,0,0.5);
-      padding: 10px;
-      border-radius: 5px;
-      font-size: 14px;
-    }
-    #switch-camera-button {
-      position: absolute;
-      bottom: 10px;
-      left: 10px;
-      z-index: 10;
-      padding: 8px 12px;
-      background-color: rgba(255,255,255,0.1);
-      color: white;
-      border: 1px solid white;
-      border-radius: 5px;
-      cursor: pointer;
-    }
+    #switchCameraBtn:hover, #settingsBtn:hover, #calibrateBtn:hover, #zoomInBtn:hover, #zoomOutBtn:hover { background: #219150; }
+    #switchCameraBtn img, #settingsBtn img, #calibrateBtn img { width: 28px; height: 28px; display: block; }
+    #zoomControls { position: absolute; bottom: 20px; right: 20px; display: flex; flex-direction: column; gap: 10px; z-index: 20; }
+    #zoomInBtn, #zoomOutBtn { font-size: 2rem; padding: 5px 15px; width: 60px; height: 60px; border-radius: 50%; background: rgba(39, 174, 96, 0.8); box-shadow: 0 4px 10px rgba(0,0,0,0.3);}
+    #restartDrawBtn { display: none; position: absolute; top: 20px; left: 20px; z-index: 21; padding: 10px 22px; border-radius: 14px; background: #e74c3c; color: #fff; border: none; font-size: 1.1rem; font-weight: bold; box-shadow: 0 2px 8px rgba(0,0,0,0.15); cursor: pointer;}
+    #restartDrawBtn:hover { background: #b53224; }
+    #loadingIndicator { position: absolute; top: 60px; left: 50%; transform: translateX(-50%); z-index: 30; color: #ff0; background: rgba(0,0,0,0.7); padding: 7px 16px; border-radius: 12px; font-size: 1.1rem; display: none; pointer-events: none;}
+    #trampolineNotice { position: absolute; left: 50%; bottom: 10px; transform: translateX(-50%); color: #0f0; background: rgba(0,0,0,0.7); padding: 10px 24px; border-radius: 16px; font-size: 1.2rem; width: auto; max-width: 90vw; text-align: center; pointer-events: none; z-index: 30;}
+    #settingsPopover { display: none; position: absolute; top: 60px; left: 50%; transform: translateX(-50%); min-width: 320px; background: rgba(34,34,34,0.98); border-radius: 16px; box-shadow: 0 6px 30px rgba(0,0,0,0.35), 0 1.5px 3px #222; padding: 24px 28px 18px 28px; z-index: 100; color: #fff; flex-direction: column; gap: 12px;}
+    #settingsPopover.open { display: flex; animation: popIn 0.18s; }
+    @keyframes popIn { from { opacity: 0; transform: translateX(-50%) scale(0.97); } to   { opacity: 1; transform: translateX(-50%) scale(1); } }
+    #settingsPopover label { font-size: 1rem; margin-bottom: 2px; }
+    #settingsPopover input[type="number"], #settingsPopover input[type="checkbox"] { padding: 6px; font-size: 1rem; border-radius: 6px; border: 1px solid #888; width: 110px; margin-bottom: 8px; background: #222; color: #fff;}
+    #settingsPopover input[type="checkbox"] { width: auto; margin-left: 10px; vertical-align: middle; }
+    #settingsPopover .checkbox-container { display: flex; align-items: center; margin-top: 5px; }
+    #settingsPopover .desc { color: #aaa; font-size: 0.92rem; margin-bottom: 7px; margin-top: -4px; }
+    #settingsPopover .close-btn { position: absolute; top: 10px; right: 16px; background: none; border: none; color: #aaa; font-size: 1.35rem; cursor: pointer; padding: 0; line-height: 1;}
+    #settingsPopover .close-btn:hover { color: #fff; }
+    #saveSettingsBtn { margin-top: 12px; padding: 10px 18px; border-radius: 12px; background: #27ae60; color: #fff; font-size: 1rem; border: none; cursor: pointer; font-weight: bold; box-shadow: 0 2px 8px rgba(0,0,0,0.2); transition: background 0.2s; align-self: flex-end;}
+    #saveSettingsBtn:active, #saveSettingsBtn:focus { background: #219150; }
+    #calibrateBtn:disabled { background: #888 !important; cursor: not-allowed; }
+    #widgetJumpHeightDisplay { display: block; position: absolute; top: 60px; right: 30px; background: rgba(0,0,0,0.75); color: #ff0; padding: 12px 20px; border-radius: 12px; font-size: 1.3rem; z-index: 25; pointer-events: none; font-weight: bold; text-shadow: 1px 1px 5px #000;}
+    #rawHeightDebugDisplay, #debugValuesDisplay, #frameRateDisplay { position: absolute; top: 20px; left: 20px; background: rgba(0, 0, 0, 0.7); color: #fff; padding: 8px 15px; border-radius: 12px; font-size: 0.9rem; z-index: 20; pointer-events: none; text-align: left; display: none;}
+    #rawHeightDebugDisplay.positive { color: #0f0; }
+    #debugValuesDisplay { top: 120px; max-width: 300px; white-space: pre-line; }
+    #frameRateDisplay { top: 80px; }
+    #trackingMethodDisplay { display: none; position: absolute; top: 130px; right: 30px; background: rgba(0,0,0,0.75); color: #fff; padding: 8px 12px; border-radius: 8px; font-size: 0.9rem; z-index: 25; }
   </style>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/pose@0.5/pose.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/pose-detection"></script>
 </head>
 <body>
-  <div id="canvas-container">
-    <canvas class="output"></canvas>
-    <canvas class="landmark"></canvas>
-    <div class="jump-stats" id="jumpStats">
-      <p>Jump Height: <span id="jumpHeight">0</span> m</p>
-      <p>Airtime: <span id="airtime">0</span> s</p>
-      <p>Highest Jump: <span id="highestJump">0</span> m</p>
-      <p>Lowest Jump: <span id="lowestJump">0</span> m</p>
-      <p>Average Jump: <span id="averageJump">0</span> m</p>
-      <p>Jump Count: <span id="jumpCount">0</span></p>
+  <div id="container">
+    <button id="restartDrawBtn">Restart Draw</button>
+    <canvas id="canvas"></canvas>
+    <div id="buttonRow">
+      <button id="switchCameraBtn" aria-label="Switch camera" tabindex="0" role="button">
+        <img src="https://static-00.iconduck.com/assets.00/camera-switch-icon-1024x1024-9oe5epjn.png" alt="Switch Camera">
+      </button>
+      <button id="calibrateBtn" aria-label="Calibrate baseline" tabindex="0" role="button" style="display:none;">
+        <img src="https://icon-library.com/images/wrench-icon-png/wrench-icon-png-11.jpg" alt="Calibrate" style="width:28px;height:28px;" />
+      </button>
+      <button class="settings-btn" id="settingsBtn" aria-label="Open settings" tabindex="0" role="button">
+        <img src="https://creazilla-store.fra1.digitaloceanspaces.com/icons/3430447/ruler-icon-md.png" alt="Calibration Settings" />
+      </button>
+    </div>
+    <div id="settingsPopover">
+      <button class="close-btn" id="closeSettingsBtn" aria-label="Close settings">&times;</button>
+      <div>
+        <label for="cameraDistance">Camera distance from trampoline center (meters):</label><br>
+        <input type="number" step="0.01" min="0.1" max="20" value="2.0" id="cameraDistance">
+        <div class="desc">Measure horizontally from the camera lens to the center of the trampoline.</div>
+      </div>
+      <div>
+        <label for="cameraHeight">Camera height above trampoline surface (meters):</label><br>
+        <input type="number" step="0.01" min="0" max="10" value="1.0" id="cameraHeight">
+        <div class="desc">Measure vertically from the trampoline mat to the center of the camera lens.</div>
+      </div>
+      <div>
+        <label for="depthScaleFactor">MediaPipe Z Depth Scale Factor:</label><br>
+        <input type="number" step="0.1" min="0.1" max="50" value="5.0" id="depthScaleFactor">
+        <div class="desc">Adjusts how MediaPipe's relative Z-coordinate (depth) is scaled into real-world meters. This is fine-tuned automatically after initial calibration jumps.</div>
+      </div>
+      <div>
+        <label for="jumpThreshold">Minimum Jump Threshold (meters):</label><br>
+        <input type="number" step="0.01" min="0.01" max="0.5" value="0.08" id="jumpThreshold">
+        <div class="desc">Minimum height difference to be considered a jump (reduces false positives from minor movements).</div>
+      </div>
+      <div class="checkbox-container">
+        <label for="debugMode">Enable Debug Mode (show raw data):</label>
+        <input type="checkbox" id="debugMode">
+      </div>
+      <div class="checkbox-container">
+        <label for="useHighFrameRate">Use High Frame Rate (if available):</label>
+        <input type="checkbox" id="useHighFrameRate" checked>
+      </div>
+      <div class="checkbox-container">
+        <label for="useOrientationSensors">Use Orientation Sensors (if available):</label>
+        <input type="checkbox" id="useOrientationSensors" checked>
+      </div>
+      <button id="saveSettingsBtn">Save</button>
+    </div>
+    <div id="trampolineNotice">Tap the four corners of the trampoline, then press Calibrate</div>
+    <div id="loadingIndicator">Loading...</div>
+    <div id="widgetJumpHeightDisplay">Jump: 0.00 m</div>
+    <div id="rawHeightDebugDisplay">Raw Z-Delta: 0.000m</div>
+    <div id="debugValuesDisplay"></div>
+    <div id="frameRateDisplay">FPS: 0</div>
+    <div id="trackingMethodDisplay">Tracking Method: Standard</div>
+    <div id="zoomControls">
+      <button id="zoomInBtn">+</button>
+      <button id="zoomOutBtn">-</button>
+    </div>
+  </div>
+  <video id="video" autoplay playsinline style="display:none;"></video>
+  <script>
+// -------- Constants --------
+const GRAVITY = 9.81; // m/s²
+let MIN_JUMP_THRESHOLD = 0.08; // 8cm minimum to be considered a jump (user adjustable)
+const MIN_PIXEL_TRAVEL = 15; // Minimum pixels to move to be considered a jump
+let SAMPLING_INTERVAL = 33; // ~30fps by default, adjusted based on capabilities
+
+// -------- Robust Error Logger --------
+function jtError(area, message, errObj) {
+  try {
+    let msg = `[JTERROR][${area}] ${message}`;
+    if (errObj !== undefined) {
+      msg += (typeof errObj === "object" ? " " + (errObj.stack || JSON.stringify(errObj)) : " " + String(errObj));
+    }
+    console.error(msg);
+  } catch (e) {
+    console.error("[JTERROR][jtError] Logging failure", e);
+  }
+}
+
+// -------- DOM/State refs --------
+const switchCameraBtn  = document.getElementById('switchCameraBtn');
+const loadingIndicator = document.getElementById('loadingIndicator');
+const trampolineNotice = document.getElementById('trampolineNotice');
+const video = document.getElementById('video');
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+const calibrateBtn = document.getElementById('calibrateBtn');
+const widgetJumpHeightDisplay = document.getElementById('widgetJumpHeightDisplay');
+const rawHeightDebugDisplay = document.getElementById('rawHeightDebugDisplay');
+const debugValuesDisplay = document.getElementById('debugValuesDisplay');
+const frameRateDisplay = document.getElementById('frameRateDisplay');
+const trackingMethodDisplay = document.getElementById('trackingMethodDisplay');
+const zoomInBtn = document.getElementById('zoomInBtn');
+const zoomOutBtn = document.getElementById('zoomOutBtn');
+const debugModeCheckbox = document.getElementById('debugMode');
+const useHighFrameRateCheckbox = document.getElementById('useHighFrameRate');
+const useOrientationSensorsCheckbox = document.getElementById('useOrientationSensors');
+const restartDrawBtn = document.getElementById('restartDrawBtn');
+const settingsBtn  = document.getElementById('settingsBtn');
+const settingsPopover = document.getElementById('settingsPopover');
+const closeSettingsBtn = document.getElementById('closeSettingsBtn');
+const saveSettingsBtn  = document.getElementById('saveSettingsBtn');
+const cameraDistanceInput = document.getElementById('cameraDistance');
+const cameraHeightInput   = document.getElementById('cameraHeight');
+const depthScaleFactorInput = document.getElementById('depthScaleFactor');
+const jumpThresholdInput = document.getElementById('jumpThreshold');
+
+// -------- State Variables --------
+let trackingMethod = 'loading'; // 'arkit', 'arcore', 'mediapipe', 'movenet'
+let jumpTracker = null;
+let orientationCalibrator = null;
+let poseLoaded = false;
+let currentStream = null;
+let useFrontCamera = false;
+let trampolineCorners = [];
+let trampolinePolygon = null;
+let trampolineCenter = null;
+let calibrationReady = false;
+let lastPoseResults = null;
+let animationFrameId = null;
+let baselineZ = null;
+let debugMode = false;
+let videoTrack = null;
+let zoomCapabilities = null;
+
+// Jump detection state variables
+let jumpState = 'on_ground';
+let jumpStartTime = 0;
+let jumpPeakTime = 0;
+let jumpEndTime = 0;
+let highestPoint = 0;
+let jumpStartY = 0; // Pixel position
+let jumpHighestY = 0; // Pixel position
+let lastReportedJumpHeight = 0;
+let jumpInProgress = false;
+
+// For smoothing and velocity calculations
+let lastZPosRaw = null;
+let lastTimeRaw = null;
+let zHistory = [];
+let velocityHistory = [];
+let currentZSmoothed = null;
+let verticalVelocitySmoothed = null;
+
+// Calibration states
+const CALIBRATION_PHASE_MARK_CORNERS = 'mark_corners';
+const CALIBRATION_PHASE_STAND_STILL = 'stand_still';
+const CALIBRATION_PHASE_JUMP_CALIBRATION = 'jump_calibration';
+const CALIBRATION_PHASE_COMPLETE = 'complete';
+let currentCalibrationPhase = CALIBRATION_PHASE_MARK_CORNERS;
+let calibrationJumpsData = [];
+const REQUIRED_CALIBRATION_JUMPS = 3;
+
+// Frame rate tracking
+let frameCount = 0;
+let lastFpsUpdateTime = 0;
+let dirtyFrame = true;
+
+// MediaPipe references
+const { drawConnectors, drawLandmarks } = window;
+const POSE_CONNECTIONS = window.POSE_CONNECTIONS || (window.Pose && window.Pose.POSE_CONNECTIONS);
+let pose = null;
+let poseLoopActive = false;
+let moveNetDetector = null;
+
+// Jump detection interval ID
+let jumpDetectionIntervalId = null;
+
+// -------- Capability Detection --------
+// Detect ARKit availability (iOS)
+async function isARKitAvailable() {
+  // Check if we're on iOS
+  const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
+  if (!isIOS) return false;
+  
+  // Check for WebXR support with the required features
+  if (!navigator.xr) return false;
+  
+  try {
+    // Check if people occlusion is supported (indicates ARKit 3.5+)
+    const supported = await navigator.xr.isSessionSupported('immersive-ar');
+    if (!supported) return false;
+    
+    // Additional check for iOS 14+ (required for person segmentation)
+    const iOSVersion = parseInt(
+      (navigator.userAgent.match(/OS (\d+)_/) || ['', '0'])[1], 
+      10
+    );
+    
+    return iOSVersion >= 14;
+  } catch (e) {
+    console.log("Error checking ARKit support:", e);
+    return false;
+  }
+}
+
+// Detect ARCore availability (Android)
+async function isARCoreAvailable() {
+  // Check if we're on Android
+  const isAndroid = /Android/.test(navigator.userAgent);
+  if (!isAndroid) return false;
+  
+  // Check for WebXR support
+  if (!navigator.xr) return false;
+  
+  try {
+    // Check if AR is supported
+    const supported = await navigator.xr.isSessionSupported('immersive-ar');
+    if (!supported) return false;
+    
+    // Additional check for ARCore depth API
+    // This is a simplification - in practice you'd need to check more specifically
+    const androidVersion = parseInt(
+      (navigator.userAgent.match(/Android (\d+)/) || ['', '0'])[1], 
+      10
+    );
+    
+    return androidVersion >= 10; // Android 10+ typically has ARCore depth support
+  } catch (e) {
+    console.log("Error checking ARCore support:", e);
+    return false;
+  }
+}
+
+// Check if TensorFlow MoveNet is available
+async function isMoveNetAvailable() {
+  try {
+    // Check if TensorFlow.js is available
+    if (!window.tf) return false;
+    
+    // Check if pose-detection is available
+    if (!window.poseDetection) return false;
+    
+    // Check if MoveNet is supported
+    const supportedModels = await window.poseDetection.getSupportedModels();
+    return supportedModels.includes('MoveNet');
+  } catch (e) {
+    console.log("Error checking MoveNet support:", e);
+    return false;
+  }
+}
+
+// Function to determine the best available tracking method
+async function getBestTrackingMethod() {
+  // Check for ARKit (iOS AR)
+  if (await isARKitAvailable()) {
+    return 'arkit';
+  } 
+  // Check for ARCore (Android AR)
+  else if (await isARCoreAvailable()) {
+    return 'arcore';
+  }
+  // Check for MoveNet (better than MediaPipe on some devices)
+  else if (await isMoveNetAvailable()) {
+    return 'movenet';
+  }
+  // Fallback to MediaPipe
+  else {
+    return 'mediapipe';
+  }
+}
+
+// -------- OrientationCalibrator Class --------
+class OrientationCalibrator {
+  constructor() {
+    this.hasPermission = false;
+    this.currentOrientation = { alpha: 0, beta: 0, gamma: 0 };
+    this.calibrationOrientation = null;
+    this.isActive = false;
+  }
+  
+  async initialize() {
+    // Check if device orientation is supported
+    if (!window.DeviceOrientationEvent) {
+      console.log("Device orientation not supported");
+      return false;
+    }
+    
+    // Request permission for device orientation on iOS
+    if (typeof DeviceOrientationEvent.requestPermission === 'function') {
+      try {
+        const permission = await DeviceOrientationEvent.requestPermission();
+        this.hasPermission = (permission === 'granted');
+      } catch (e) {
+        console.error("Couldn't get device orientation permission:", e);
+        this.hasPermission = false;
+        return false;
+      }
+    } else {
+      // No permission needed on Android or older iOS
+      this.hasPermission = true;
+    }
+    
+    if (this.hasPermission) {
+      window.addEventListener('deviceorientation', this.onOrientationChange.bind(this));
+      this.isActive = true;
+      return true;
+    }
+    
+    return false;
+  }
+  
+  onOrientationChange(event) {
+    this.currentOrientation = {
+      alpha: event.alpha, // Z-axis rotation
+      beta: event.beta,   // X-axis rotation
+      gamma: event.gamma  // Y-axis rotation
+    };
+  }
+  
+  calibrate() {
+    if (!this.isActive) return false;
+    this.calibrationOrientation = {...this.currentOrientation};
+    return true;
+  }
+  
+  getCorrectionMatrix() {
+    if (!this.isActive || !this.calibrationOrientation) return null;
+    
+    // Calculate difference between current and calibration orientation
+    const diff = {
+      alpha: this.currentOrientation.alpha - this.calibrationOrientation.alpha,
+      beta: this.currentOrientation.beta - this.calibrationOrientation.beta,
+      gamma: this.currentOrientation.gamma - this.calibrationOrientation.gamma
+    };
+    
+    // Return correction matrix (simplified)
+    return diff;
+  }
+  
+  applyOrientationCorrection(position) {
+    if (!this.isActive || !this.calibrationOrientation) return position;
+    
+    const correction = this.getCorrectionMatrix();
+    if (!correction) return position;
+    
+    // Apply simple tilt correction to z-coordinate
+    // This is a simplified approach - a real implementation would use matrix transformations
+    const tiltFactor = Math.abs(correction.beta) * 0.01; // Simple scaling factor
+    const correctedZ = position.z - tiltFactor;
+    
+    return {
+      x: position.x,
+      y: position.y,
+      z: correctedZ
+    };
+  }
+}
+
+// -------- ARKit Tracker --------
+class ARKitTracker {
+  constructor() {
+    this.session = null;
+    this.referenceSpace = null;
+    this.baselineHeight = null;
+    this.currentJumpState = 'on_ground';
+    this.jumpStartTime = 0;
+    this.highestPoint = 0;
+    this.lastReportedHeight = 0;
+    this.orientationCalibrator = null;
+  }
+  
+  async initialize(orientationCalibrator) {
+    this.orientationCalibrator = orientationCalibrator;
+    
+    try {
+      const session = await navigator.xr.requestSession('immersive-ar', {
+        requiredFeatures: ['hit-test', 'depth-sensing'],
+        depthSensing: {
+          usagePreference: ['cpu-optimized'],
+          dataFormatPreference: ['luminance-alpha']
+        }
+      });
+      
+      this.session = session;
+      
+      // Create reference space
+      this.referenceSpace = await session.requestReferenceSpace('local');
+      
+      // Set up frame loop
+      session.requestAnimationFrame(this.onXRFrame.bind(this));
+      
+      return true;
+    } catch (e) {
+      console.error("Failed to initialize ARKit:", e);
+      return false;
+    }
+  }
+  
+  onXRFrame(time, frame) {
+    if (!this.session) return;
+    
+    const pose = frame.getViewerPose(this.referenceSpace);
+    if (!pose) {
+      this.session.requestAnimationFrame(this.onXRFrame.bind(this));
+      return;
+    }
+    
+    // Get depth information
+    const depthInfo = frame.getDepthInformation(pose.views[0]);
+    if (!depthInfo) {
+      this.session.requestAnimationFrame(this.onXRFrame.bind(this));
+      return;
+    }
+    
+    // Track the person - this is simplified
+    // In practice, you'd use ARKit's person segmentation data
+    const personDepth = this.getPersonLowestPoint(depthInfo);
+    
+    if (personDepth) {
+      const position = {
+        x: 0, // We don't track horizontal position in this simple implementation
+        y: 0,
+        z: personDepth
+      };
+      
+      // Apply orientation correction if available
+      const correctedPosition = this.orientationCalibrator ? 
+        this.orientationCalibrator.applyOrientationCorrection(position) : 
+        position;
+      
+      // Process the jump height
+      this.processJumpHeight(correctedPosition.z, time);
+    }
+    
+    // Continue the frame loop
+    this.session.requestAnimationFrame(this.onXRFrame.bind(this));
+  }
+  
+  getPersonLowestPoint(depthInfo) {
+    // This is a simplified implementation
+    // In practice, you would use ARKit's person segmentation to identify feet/ankles
+    
+    // For simulation, we'll return a mock value that varies to simulate jumping
+    // In a real implementation, this would analyze the depth buffer
+    
+    const mockHeight = 1.0 + Math.sin(Date.now() / 1000) * 0.2;
+    return mockHeight;
+  }
+  
+  processJumpHeight(currentHeight, timestamp) {
+    if (this.baselineHeight === null) {
+      // Auto-calibrate on first reading
+      this.baselineHeight = currentHeight;
+      return;
+    }
+    
+    const height = currentHeight - this.baselineHeight;
+    
+    switch (this.currentJumpState) {
+      case 'on_ground':
+        if (height > MIN_JUMP_THRESHOLD) {
+          // Jump detected
+          this.currentJumpState = 'ascending';
+          this.jumpStartTime = timestamp;
+          this.highestPoint = currentHeight;
+          
+          sendJumpHeight(0, true, 'takeoff');
+        }
+        break;
+        
+      case 'ascending':
+        if (currentHeight > this.highestPoint) {
+          this.highestPoint = currentHeight;
+        }
+        
+        // Check if we've reached peak
+        if (height > 0 && currentHeight < this.highestPoint - 0.03) {
+          this.currentJumpState = 'descending';
+          sendJumpHeight(height, true, 'peak');
+        } else {
+          sendJumpHeight(height, true, 'ascending');
+        }
+        break;
+        
+      case 'descending':
+        if (height < MIN_JUMP_THRESHOLD / 2) {
+          // Landing detected
+          this.currentJumpState = 'on_ground';
+          const jumpEndTime = timestamp;
+          const flightTime = (jumpEndTime - this.jumpStartTime) / 1000;
+          
+          // Calculate jump height using flight time
+          const flightTimeHeight = (GRAVITY * Math.pow(flightTime, 2)) / 8;
+          
+          // Calculate jump height using depth data
+          const depthHeight = this.highestPoint - this.baselineHeight;
+          
+          // Use weighted average with preference for flight time
+          const weightedHeight = (0.3 * depthHeight) + (0.7 * flightTimeHeight);
+          
+          sendJumpHeight(weightedHeight, true, 'landed');
+          
+          this.lastReportedHeight = weightedHeight;
+          this.highestPoint = 0;
+        } else {
+          sendJumpHeight(height, true, 'descending');
+        }
+        break;
+    }
+  }
+  
+  calibrate() {
+    // ARKit doesn't require manual calibration, but we'll reset the baseline
+    this.baselineHeight = null;
+    
+    // Also calibrate orientation if available
+    if (this.orientationCalibrator) {
+      this.orientationCalibrator.calibrate();
+    }
+    
+    return true;
+  }
+  
+  shutdown() {
+    if (this.session) {
+      this.session.end();
+      this.session = null;
+    }
+  }
+}
+
+// -------- ARCore Tracker --------
+// Similar to ARKit but with Android-specific adjustments
+class ARCoreTracker {
+  constructor() {
+    this.session = null;
+    this.referenceSpace = null;
+    this.baselineHeight = null;
+    this.currentJumpState = 'on_ground';
+    this.jumpStartTime = 0;
+    this.highestPoint = 0;
+    this.lastReportedHeight = 0;
+    this.orientationCalibrator = null;
+  }
+  
+  async initialize(orientationCalibrator) {
+    this.orientationCalibrator = orientationCalibrator;
+    
+    try {
+      const session = await navigator.xr.requestSession('immersive-ar', {
+        requiredFeatures: ['hit-test', 'depth-sensing'],
+        depthSensing: {
+          usagePreference: ['cpu-optimized'],
+          dataFormatPreference: ['luminance-alpha']
+        }
+      });
+      
+      this.session = session;
+      
+      // Create reference space
+      this.referenceSpace = await session.requestReferenceSpace('local');
+      
+      // Set up frame loop
+      session.requestAnimationFrame(this.onXRFrame.bind(this));
+      
+      return true;
+    } catch (e) {
+      console.error("Failed to initialize ARCore:", e);
+      return false;
+    }
+  }
+  
+  // The rest of the implementation is similar to ARKitTracker
+  // with slight adjustments for ARCore's API differences
+  
+  onXRFrame(time, frame) {
+    // Similar to ARKit implementation
+    if (!this.session) return;
+    
+    const pose = frame.getViewerPose(this.referenceSpace);
+    if (!pose) {
+      this.session.requestAnimationFrame(this.onXRFrame.bind(this));
+      return;
+    }
+    
+    // ARCore depth API is slightly different
+    const depthInfo = frame.getDepthInformation(pose.views[0]);
+    if (!depthInfo) {
+      this.session.requestAnimationFrame(this.onXRFrame.bind(this));
+      return;
+    }
+    
+    const personDepth = this.getPersonLowestPoint(depthInfo);
+    
+    if (personDepth) {
+      const position = {
+        x: 0,
+        y: 0,
+        z: personDepth
+      };
+      
+      const correctedPosition = this.orientationCalibrator ? 
+        this.orientationCalibrator.applyOrientationCorrection(position) : 
+        position;
+      
+      this.processJumpHeight(correctedPosition.z, time);
+    }
+    
+    this.session.requestAnimationFrame(this.onXRFrame.bind(this));
+  }
+  
+  getPersonLowestPoint(depthInfo) {
+    // ARCore implementation - similar to ARKit but with ARCore-specific adjustments
+    // For simulation, using the same mock implementation
+    const mockHeight = 1.0 + Math.sin(Date.now() / 1000) * 0.2;
+    return mockHeight;
+  }
+  
+  processJumpHeight(currentHeight, timestamp) {
+    // Same as ARKit implementation
+    if (this.baselineHeight === null) {
+      this.baselineHeight = currentHeight;
+      return;
+    }
+    
+    const height = currentHeight - this.baselineHeight;
+    
+    switch (this.currentJumpState) {
+      case 'on_ground':
+        if (height > MIN_JUMP_THRESHOLD) {
+          this.currentJumpState = 'ascending';
+          this.jumpStartTime = timestamp;
+          this.highestPoint = currentHeight;
+          
+          sendJumpHeight(0, true, 'takeoff');
+        }
+        break;
+        
+      case 'ascending':
+        if (currentHeight > this.highestPoint) {
+          this.highestPoint = currentHeight;
+        }
+        
+        if (height > 0 && currentHeight < this.highestPoint - 0.03) {
+          this.currentJumpState = 'descending';
+          sendJumpHeight(height, true, 'peak');
+        } else {
+          sendJumpHeight(height, true, 'ascending');
+        }
+        break;
+        
+      case 'descending':
+        if (height < MIN_JUMP_THRESHOLD / 2) {
+          this.currentJumpState = 'on_ground';
+          const jumpEndTime = timestamp;
+          const flightTime = (jumpEndTime - this.jumpStartTime) / 1000;
+          
+          const flightTimeHeight = (GRAVITY * Math.pow(flightTime, 2)) / 8;
+          const depthHeight = this.highestPoint - this.baselineHeight;
+          
+          // ARCore weights slightly different from ARKit
+          const weightedHeight = (0.35 * depthHeight) + (0.65 * flightTimeHeight);
+          
+          sendJumpHeight(weightedHeight, true, 'landed');
+          
+          this.lastReportedHeight = weightedHeight;
+          this.highestPoint = 0;
+        } else {
+          sendJumpHeight(height, true, 'descending');
+        }
+        break;
+    }
+  }
+  
+  calibrate() {
+    this.baselineHeight = null;
+    
+    if (this.orientationCalibrator) {
+      this.orientationCalibrator.calibrate();
+    }
+    
+    return true;
+  }
+  
+  shutdown() {
+    if (this.session) {
+      this.session.end();
+      this.session = null;
+    }
+  }
+}
+
+// -------- MoveNet Tracker --------
+class MoveNetTracker {
+  constructor() {
+    this.detector = null;
+    this.baselineHeight = null;
+    this.currentJumpState = 'on_ground';
+    this.jumpStartTime = 0;
+    this.jumpPeakTime = 0;
+    this.jumpEndTime = 0;
+    this.highestPoint = 0;
+    this.jumpStartY = 0;
+    this.jumpHighestY = 0;
+    this.lastReportedHeight = 0;
+    this.lastResult = null;
+    this.zHistory = [];
+    this.velocityHistory = [];
+    this.currentZSmoothed = null;
+    this.verticalVelocitySmoothed = null;
+    this.isTracking = false;
+  }
+  
+  async initialize() {
+    try {
+      // Load MoveNet model
+      const detectorConfig = {
+        modelType: poseDetection.movenet.modelType.SINGLEPOSE_LIGHTNING,
+        enableSmoothing: true
+      };
+      
+      this.detector = await poseDetection.createDetector(
+        poseDetection.SupportedModels.MoveNet,
+        detectorConfig
+      );
+      
+      // Start tracking loop
+      this.isTracking = true;
+      this.trackPose();
+      
+      return true;
+    } catch (e) {
+      console.error("Failed to initialize MoveNet:", e);
+      return false;
+    }
+  }
+  
+  async trackPose() {
+    if (!this.isTracking) return;
+    
+    try {
+      if (video.readyState === 4) {
+        const poses = await this.detector.estimatePoses(video);
+        
+        if (poses && poses.length > 0) {
+          this.lastResult = poses[0];
+          this.processPose(poses[0]);
+        }
+      }
+    } catch (e) {
+      console.error("Error in MoveNet tracking:", e);
+    }
+    
+    // Continue tracking
+    setTimeout(() => this.trackPose(), SAMPLING_INTERVAL);
+  }
+  
+  processPose(pose) {
+    // Extract ankle keypoints (most relevant for jump height)
+    const rightAnkle = pose.keypoints.find(kp => kp.name === 'right_ankle');
+    const leftAnkle = pose.keypoints.find(kp => kp.name === 'left_ankle');
+    
+    if (!rightAnkle && !leftAnkle) return;
+    
+    // Use the lower of the two ankles
+    const ankle = (!rightAnkle) ? leftAnkle : 
+                 (!leftAnkle) ? rightAnkle : 
+                 (rightAnkle.y > leftAnkle.y) ? rightAnkle : leftAnkle;
+    
+    // Get current time for velocity calculation
+    const currentTime = performance.now();
+    
+    // Get current position (y-coordinate represents height in screen space)
+    const currentY = ankle.y;
+    
+    // Calculate raw Z position (inverted because higher y-pixel is lower in space)
+    // MoveNet doesn't provide Z-coordinate directly, so we approximate
+    const currentZRaw = video.height - currentY;
+    
+    // Calculate vertical velocity
+    let verticalVelocityRaw = 0;
+    if (this.lastZPosRaw !== undefined && this.lastTimeRaw !== undefined) {
+      const deltaTime = (currentTime - this.lastTimeRaw) / 1000;
+      if (deltaTime > 0) {
+        // Negative velocity means moving downward in screen space (but upward in real space)
+        verticalVelocityRaw = (this.lastZPosRaw - currentZRaw) / deltaTime;
+      }
+    }
+    
+    this.lastZPosRaw = currentZRaw;
+    this.lastTimeRaw = currentTime;
+    
+    // Apply smoothing
+    if (this.currentZSmoothed === null) this.currentZSmoothed = currentZRaw;
+    this.currentZSmoothed = 0.4 * currentZRaw + 0.6 * this.currentZSmoothed;
+    
+    // Record history
+    this.zHistory.push(this.currentZSmoothed);
+    if (this.zHistory.length > 6) this.zHistory.shift();
+    
+    if (this.verticalVelocitySmoothed === null) this.verticalVelocitySmoothed = verticalVelocityRaw;
+    this.verticalVelocitySmoothed = 0.3 * verticalVelocityRaw + 0.7 * this.verticalVelocitySmoothed;
+    this.velocityHistory.push(this.verticalVelocitySmoothed);
+    if (this.velocityHistory.length > 6) this.velocityHistory.shift();
+    
+    // If baseline not set, calibrate it
+    if (this.baselineHeight === null) {
+      this.baselineHeight = this.currentZSmoothed;
+      return;
+    }
+    
+    // Use hybrid jump detection with the processed data
+    const jumpResult = this.detectJump(
+      this.currentZSmoothed, 
+      this.baselineHeight, 
+      currentY, 
+      currentTime
+    );
+    
+    // Display and send the jump height
+    const displayHeight = jumpResult.height > MIN_JUMP_THRESHOLD ? jumpResult.height : 0;
+    widgetJumpHeightDisplay.textContent = displayHeight > 0
+      ? `Jump: ${displayHeight.toFixed(2)} m` : `Jump: 0.00 m`;
+    
+    // Update the last reported jump height for clean reporting
+    if (jumpResult.state === 'landed') {
+      this.lastReportedHeight = jumpResult.height > MIN_JUMP_THRESHOLD ? jumpResult.height : 0;
+    }
+    
+    // Send the jump height
+    let heightToSend = 0;
+    
+    if (jumpResult.state === 'landed' && jumpResult.height > MIN_JUMP_THRESHOLD) {
+      // Send the final height when landed
+      heightToSend = jumpResult.height;
+    } 
+    else if (jumpResult.state === 'ascending' || jumpResult.state === 'peak' || jumpResult.state === 'descending') {
+      // During a jump, send regular updates but only if there's significant change
+      if (Math.abs(jumpResult.height - this.lastReportedHeight) > 0.05) {
+        heightToSend = jumpResult.height > MIN_JUMP_THRESHOLD ? jumpResult.height : 0;
+        this.lastReportedHeight = heightToSend;
+      } else {
+        heightToSend = this.lastReportedHeight;
+      }
+    }
+    
+    sendJumpHeight(heightToSend, true, jumpResult.state);
+    
+    // Debug info
+    if (debugMode) {
+      debugValuesDisplay.textContent = `Jump State: ${jumpResult.state}
+Height: ${jumpResult.height.toFixed(3)}m
+Confidence: ${(jumpResult.confidence * 100).toFixed(0)}%
+Velocity: ${this.verticalVelocitySmoothed.toFixed(2)}m/s
+${jumpResult.methods ? `3D: ${jumpResult.methods.spaceHeight.toFixed(3)}m
+Time: ${jumpResult.methods.flightTimeHeight.toFixed(3)}m
+Pixel: ${jumpResult.methods.pixelHeight.toFixed(3)}m` : ''}`;
+    }
+  }
+  
+  detectJump(currentPosition, baselinePosition, currentPixelY, timestamp) {
+    // Similar to the original hybrid jump detection
+    // Ensure we have a valid minimum threshold
+    MIN_JUMP_THRESHOLD = parseFloat(jumpThresholdInput.value) || 0.08;
+    
+    // Convert to meters scale (approximate)
+    const heightScale = 0.01; // Scaling factor
+    const method1Height = Math.max(0, (currentPosition - baselinePosition) * heightScale);
+    
+    // Track pixel position for Method 3
+    const pixelTravel = Math.abs(this.jumpStartY - currentPixelY);
+    
+    // State machine for jump detection
+    switch(this.currentJumpState) {
+      case 'on_ground':
+        // Person is on the ground/trampoline
+        if (method1Height > MIN_JUMP_THRESHOLD && (pixelTravel > MIN_PIXEL_TRAVEL || this.verticalVelocitySmoothed < -0.5)) {
+          // Jump has started (note: negative velocity means moving up in screen space)
+          this.currentJumpState = 'ascending';
+          this.jumpStartTime = timestamp;
+          this.highestPoint = currentPosition;
+          this.jumpStartY = currentPixelY;
+          this.jumpHighestY = currentPixelY;
+          
+          return { height: 0, state: 'takeoff', confidence: 0.5 };
+        }
+        return { height: 0, state: 'ground', confidence: 1.0 };
+        
+      case 'ascending':
+        // Person is going up
+        if (currentPosition < this.highestPoint) {
+          // For MoveNet, lower pixel value means higher position
+          this.highestPoint = currentPosition;
+          this.jumpPeakTime = timestamp;
+          this.jumpHighestY = currentPixelY;
+        }
+        
+        // Check if we've reached peak and started descending
+        if (this.verticalVelocitySmoothed > 0.3 || currentPosition > this.highestPoint + 5) {
+          this.currentJumpState = 'descending';
+          return { 
+            height: method1Height, 
+            state: 'peak', 
+            confidence: 0.7,
+            maxHeight: (this.highestPoint - baselinePosition) * heightScale
+          };
+        }
+        return { height: method1Height, state: 'ascending', confidence: 0.7 };
+        
+      case 'descending':
+        // Person is coming down
+        if (method1Height < MIN_JUMP_THRESHOLD/2 || Math.abs(currentPosition - baselinePosition) < 5) {
+          // Person has landed
+          this.currentJumpState = 'on_ground';
+          this.jumpEndTime = timestamp;
+          
+          // Calculate using Method 2: Flight Time
+          const flightTime = (this.jumpEndTime - this.jumpStartTime) / 1000; // seconds
+          const method2Height = (GRAVITY * Math.pow(flightTime, 2)) / 8;
+          
+          // Calculate using Method 3: Pixel Travel
+          const pixelHeight = Math.abs(this.jumpStartY - this.jumpHighestY);
+          // Convert to meters (rough estimation)
+          const pixelToMeters = 0.003; // Estimated conversion factor
+          const method3Height = pixelHeight * pixelToMeters;
+          
+          // Weighted average with flight time weighted more heavily
+          const weightedHeight = (
+            (0.3 * ((this.highestPoint - baselinePosition) * heightScale)) + 
+            (0.5 * method2Height) +
+            (0.2 * method3Height)
+          );
+          
+          // Apply minimum threshold to final result
+          const finalHeight = weightedHeight > MIN_JUMP_THRESHOLD ? weightedHeight : 0;
+          
+          return { 
+            height: finalHeight, 
+            state: 'landed',
+            confidence: 0.9,
+            methods: {
+              spaceHeight: (this.highestPoint - baselinePosition) * heightScale,
+              flightTimeHeight: method2Height,
+              pixelHeight: method3Height
+            }
+          };
+        }
+        return { height: method1Height, state: 'descending', confidence: 0.7 };
+    }
+  }
+  
+  calibrate() {
+    this.baselineHeight = this.currentZSmoothed;
+    this.currentJumpState = 'on_ground';
+    return true;
+  }
+  
+  shutdown() {
+    this.isTracking = false;
+  }
+}
+
+// -------- MediaPipe Implementation (Your Existing Code) --------
+// This section includes all your existing MediaPipe functions
+
+// Aspect fill helpers
+function getVideoAspectFillDrawRect(videoW, videoH, canvasW, canvasH) {
+  const videoAspect = videoW / videoH;
+  const canvasAspect = canvasW / canvasH;
+  let drawW, drawH, drawX, drawY;
+  if (videoAspect > canvasAspect) {
+    drawH = canvasH;
+    drawW = videoW * (canvasH / videoH);
+    drawX = (canvasW - drawW) / 2;
+    drawY = 0;
+  } else {
+    drawW = canvasW;
+    drawH = videoH * (canvasW / videoW);
+    drawX = 0;
+    drawY = (canvasH - drawH) / 2;
+  }
+  return {drawX, drawY, drawW, drawH};
+}
+
+function getCanvasRelativeToVideo(x, y, videoW, videoH, canvasW, canvasH) {
+  const {drawX, drawY, drawW, drawH} = getVideoAspectFillDrawRect(videoW, videoH, canvasW, canvasH);
+  const scaleX = drawW / videoW;
+  const scaleY = drawH / videoH;
+  return [drawX + x * scaleX, drawY + y * scaleY];
+}
+
+function getVideoRelativeToCanvas(x, y, videoW, videoH, canvasW, canvasH) {
+  const {drawX, drawY, drawW, drawH} = getVideoAspectFillDrawRect(videoW, videoH, canvasW, canvasH);
+  const scaleX = videoW / drawW;
+  const scaleY = videoH / drawH;
+  return [(x - drawX) * scaleX, (y - drawY) * scaleY];
+}
+
+// Hybrid Jump Detection Function for MediaPipe
+function detectJump(currentPosition, baselinePosition, currentPixelY, timestamp) {
+  // Ensure we have a valid minimum threshold
+  MIN_JUMP_THRESHOLD = parseFloat(jumpThresholdInput.value) || 0.08;
+  
+  // Method 1: 3D Space height difference
+  const method1Height = Math.max(0, currentPosition - baselinePosition);
+  
+  // Track pixel position for Method 3
+  const pixelTravel = Math.abs(jumpStartY - currentPixelY);
+  
+  // State machine for jump detection
+  switch(jumpState) {
+    case 'on_ground':
+      // Person is on the ground/trampoline
+      if (method1Height > MIN_JUMP_THRESHOLD && (pixelTravel > MIN_PIXEL_TRAVEL || verticalVelocitySmoothed > 0.5)) {
+        // Jump has started
+        jumpState = 'ascending';
+        jumpStartTime = timestamp;
+        highestPoint = currentPosition;
+        jumpStartY = currentPixelY;
+        jumpHighestY = currentPixelY;
+        jumpInProgress = true;
+        return { height: 0, state: 'takeoff', confidence: 0.5 };
+      }
+      return { height: 0, state: 'ground', confidence: 1.0 };
+      
+    case 'ascending':
+      // Person is going up
+      if (currentPosition > highestPoint) {
+        // Update highest point
+        highestPoint = currentPosition;
+        jumpPeakTime = timestamp;
+        jumpHighestY = currentPixelY;
+      }
+      
+      // Check if we've reached peak and started descending
+      if (verticalVelocitySmoothed < -0.3 || currentPosition < highestPoint - 0.03) {
+        jumpState = 'descending';
+        return { 
+          height: method1Height, 
+          state: 'peak', 
+          confidence: 0.7,
+          maxHeight: highestPoint - baselinePosition
+        };
+      }
+      return { height: method1Height, state: 'ascending', confidence: 0.7 };
+      
+    case 'descending':
+      // Person is coming down
+      if (method1Height < MIN_JUMP_THRESHOLD/2 || (currentPosition - baselinePosition) < 0.03) {
+        // Person has landed
+        jumpState = 'on_ground';
+        jumpEndTime = timestamp;
+        jumpInProgress = false;
+        
+        // Calculate using Method 2: Flight Time
+        const flightTime = (jumpEndTime - jumpStartTime) / 1000; // seconds
+        const method2Height = (GRAVITY * Math.pow(flightTime, 2)) / 8;
+        
+        // Calculate using Method 3: Pixel Travel
+        const pixelHeight = Math.abs(jumpStartY - jumpHighestY);
+        // Convert to meters (rough estimation based on baseline height)
+        const pixelToMeters = (baselinePosition / 100) * 0.5; // Adjusted ratio
+        const method3Height = pixelHeight * pixelToMeters;
+        
+        // Weighted average of all three methods with flight time weighted more heavily
+        const weightedHeight = (
+          (0.3 * (highestPoint - baselinePosition)) + 
+          (0.5 * method2Height) +  // Increased weight for flight time
+          (0.2 * method3Height)
+        );
+        
+        // Apply minimum threshold to final result
+        const finalHeight = weightedHeight > MIN_JUMP_THRESHOLD ? weightedHeight : 0;
+        
+        return { 
+          height: finalHeight, 
+          state: 'landed',
+          confidence: 0.9,
+          methods: {
+            spaceHeight: highestPoint - baselinePosition,
+            flightTimeHeight: method2Height,
+            pixelHeight: method3Height
+          }
+        };
+      }
+      return { height: method1Height, state: 'descending', confidence: 0.7 };
+  }
+}
+
+// Initialization
+window.addEventListener('DOMContentLoaded', async () => {
+  try {
+    // Initialize orientation calibration if enabled
+    if (useOrientationSensorsCheckbox.checked) {
+      orientationCalibrator = new OrientationCalibrator();
+      await orientationCalibrator.initialize();
+    }
+    
+    // Determine the best tracking method
+    loadingIndicator.style.display = 'block';
+    loadingIndicator.textContent = 'Detecting optimal tracking method...';
+    
+    trackingMethod = await getBestTrackingMethod();
+    
+    switch(trackingMethod) {
+      case 'arkit':
+        // Initialize ARKit tracking
+        jumpTracker = new ARKitTracker();
+        const arkitSuccess = await jumpTracker.initialize(orientationCalibrator);
+        
+        if (!arkitSuccess) {
+          console.log("ARKit initialization failed, falling back to MediaPipe");
+          trackingMethod = 'mediapipe';
+          initializeMediaPipeTracking();
+        } else {
+          console.log("Using ARKit tracking (optimal for this device)");
+          trackingMethodDisplay.textContent = "Tracking Method: ARKit (iOS Advanced)";
+          trackingMethodDisplay.style.display = "block";
+          
+          // Hide calibration UI for AR-based tracking (it auto-calibrates)
+          calibrateBtn.style.display = 'none';
+          trampolineNotice.textContent = 'Advanced 3D tracking active. No manual calibration needed.';
+        }
+        break;
+        
+      case 'arcore':
+        // Initialize ARCore tracking
+        jumpTracker = new ARCoreTracker();
+        const arcoreSuccess = await jumpTracker.initialize(orientationCalibrator);
+        
+        if (!arcoreSuccess) {
+          console.log("ARCore initialization failed, falling back to MediaPipe");
+          trackingMethod = 'mediapipe';
+          initializeMediaPipeTracking();
+        } else {
+          console.log("Using ARCore tracking (optimal for this device)");
+          trackingMethodDisplay.textContent = "Tracking Method: ARCore (Android Advanced)";
+          trackingMethodDisplay.style.display = "block";
+          
+          // Hide calibration UI for AR-based tracking (it auto-calibrates)
+          calibrateBtn.style.display = 'none';
+          trampolineNotice.textContent = 'Advanced 3D tracking active. No manual calibration needed.';
+        }
+        break;
+        
+      case 'movenet':
+        // Initialize MoveNet tracking
+        loadingIndicator.textContent = 'Loading MoveNet model...';
+        jumpTracker = new MoveNetTracker();
+        const movenetSuccess = await jumpTracker.initialize();
+        
+        if (!movenetSuccess) {
+          console.log("MoveNet initialization failed, falling back to MediaPipe");
+          trackingMethod = 'mediapipe';
+          initializeMediaPipeTracking();
+        } else {
+          console.log("Using MoveNet tracking");
+          trackingMethodDisplay.textContent = "Tracking Method: MoveNet (Enhanced)";
+          trackingMethodDisplay.style.display = "block";
+          
+          // Start camera for MoveNet
+          await startCamera();
+          
+          // Continue with regular calibration UI
+          currentCalibrationPhase = CALIBRATION_PHASE_MARK_CORNERS;
+          trampolineNotice.textContent = "Tap the four corners of the trampoline to mark its boundaries.";
+        }
+        break;
+        
+      default:
+        // Fallback to MediaPipe
+        console.log("Using MediaPipe tracking (fallback)");
+        trackingMethodDisplay.textContent = "Tracking Method: MediaPipe (Standard)";
+        trackingMethodDisplay.style.display = "block";
+        
+        initializeMediaPipeTracking();
+    }
+    
+    loadingIndicator.style.display = 'none';
+  } catch (e) {
+    loadingIndicator.style.display = 'none';
+    trampolineNotice.textContent = "Failed to initialize tracking. Please try again or check device compatibility.";
+    trampolineNotice.style.color = "#f00";
+    jtError("initialization", "Initialization error", e);
+  }
+});
+
+function initializeMediaPipeTracking() {
+  if (typeof window.Pose !== "function") {
+    jtError("pose", "MediaPipe Pose not loaded.");
+    throw new Error("MediaPipe Pose not loaded.");
+  }
+  
+  pose = new window.Pose({
+    locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/pose/${file}`
+  });
+  
+  pose.setOptions({
+    modelComplexity: 0,
+    smoothLandmarks: true,
+    enableSegmentation: false,
+    smoothSegmentation: false,
+    minDetectionConfidence: 0.6,
+    minTrackingConfidence: 0.6
+  });
+  
+  pose.onResults(results => {
+    try {
+      lastPoseResults = results;
+    } catch (e) {
+      jtError("pose.onResults", "Unhandled error in pose result callback", e);
+    }
+  });
+  
+  poseLoaded = true;
+  
+  startCamera().then(() => {
+    drawLoop();
+    poseLoop();
+    
+    // Start jump detection interval
+    jumpDetectionIntervalId = setInterval(() => {
+      if (
+        lastPoseResults &&
+        lastPoseResults.poseLandmarks &&
+        (currentCalibrationPhase === CALIBRATION_PHASE_COMPLETE || currentCalibrationPhase === CALIBRATION_PHASE_JUMP_CALIBRATION)
+      ) {
+        computeAndSendJump(lastPoseResults.poseLandmarks);
+      }
+    }, SAMPLING_INTERVAL);
+  }).catch(e => jtError("camera", "Camera failed to start", e));
+}
+
+window.addEventListener('resize', () => {
+  resizeCanvasToScreen();
+  dirtyFrame = true;
+});
+
+function resizeCanvasToScreen() {
+  canvas.width = window.innerWidth;
+  canvas.height = window.innerHeight;
+}
+
+// Setup high frame rate camera if supported
+async function setupOptimalFrameRate() {
+  const constraints = {
+    video: {
+      facingMode: useFrontCamera ? 'user' : 'environment',
+      width: { ideal: 1280 },
+      height: { ideal: 720 }
+    }
+  };
+  
+  // Add high frame rate if enabled
+  if (useHighFrameRateCheckbox.checked) {
+    constraints.video.frameRate = { ideal: 60, min: 30 };
+  }
+  
+  const stream = await navigator.mediaDevices.getUserMedia(constraints);
+  
+  const videoTrack = stream.getVideoTracks()[0];
+  const settings = videoTrack.getSettings();
+  
+  // Adjust sampling interval based on actual frame rate
+  if (settings.frameRate >= 60) {
+    SAMPLING_INTERVAL = 16; // ~60fps
+  } else if (settings.frameRate >= 30) {
+    SAMPLING_INTERVAL = 33; // ~30fps
+  } else {
+    SAMPLING_INTERVAL = 50; // Slower devices
+  }
+  
+  return stream;
+}
+
+// Camera setup
+async function startCamera() {
+  loadingIndicator.style.display = 'block';
+  
+  if (currentStream) {
+    try { currentStream.getTracks().forEach(t => t.stop()); }
+    catch (e) { jtError("camera", "Failed to stop previous camera tracks", e); }
+    videoTrack = null;
+    zoomCapabilities = null;
+  }
+  
+  try {
+    // Use optimal frame rate if available
+    if (useHighFrameRateCheckbox.checked) {
+      currentStream = await setupOptimalFrameRate();
+    } else {
+      currentStream = await navigator.mediaDevices.getUserMedia({
+        audio: false,
+        video: {
+          facingMode: useFrontCamera ? 'user' : 'environment',
+          width: { ideal: 1280 },
+          height: { ideal: 720 }
+        }
+      });
+    }
+    
+    video.srcObject = currentStream;
+    await video.play();
+    loadingIndicator.style.display = 'none';
+    videoTrack = currentStream.getVideoTracks()[0];
+    
+    if (videoTrack) {
+      zoomCapabilities = videoTrack.getCapabilities().zoom;
+      zoomInBtn.disabled = !zoomCapabilities;
+      zoomOutBtn.disabled = !zoomCapabilities;
+      
+      const settings = videoTrack.getSettings();
+      if (settings.frameRate < 30) {
+        trampolineNotice.style.color = '#ff0';
+        trampolineNotice.textContent = `Warning: Low camera frame rate (${settings.frameRate.toFixed(0)} FPS). For best accuracy, use a device with 30+ FPS.`;
+      } else if (settings.frameRate < 60 && debugMode) {
+        trampolineNotice.style.color = '#fff';
+        trampolineNotice.textContent = `Camera FPS: ${settings.frameRate.toFixed(0)}. Higher FPS (e.g., 60) can improve jump detection.`;
+      }
+    }
+    
+    resizeCanvasToScreen();
+  } catch (err) {
+    loadingIndicator.style.display = 'none';
+    trampolineNotice.textContent = 'Unable to access camera. Please check your device settings and permissions, and make sure you are using HTTPS.';
+    trampolineNotice.style.color = '#f00';
+    zoomInBtn.disabled = true;
+    zoomOutBtn.disabled = true;
+    jtError("camera", "Unable to access camera", err);
+    throw err;
+  }
+}
+
+// Draw loop
+function drawLoop() {
+  try {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    if (video.readyState >= 2 && video.videoWidth
